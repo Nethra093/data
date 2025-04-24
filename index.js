@@ -1,17 +1,20 @@
 const admin = require('firebase-admin');
 const WebSocket = require('ws');
 
+// Load Firebase service account credentials
 const serviceAccount = require('./serviceAccountKey.json');
 
+// Initialize Firebase Admin SDK
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
   databaseURL: "https://real-time-database-4f52e-default-rtdb.asia-southeast1.firebasedatabase.app/"
 });
 
+// Get database reference to "Sensors" node
 const db = admin.database();
 const sensorsRef = db.ref('Sensors');
 
-// Threshold values
+// Threshold values per sensor
 const THRESHOLDS = {
   Sensor1: 500,
   Sensor2: 300,
@@ -20,36 +23,43 @@ const THRESHOLDS = {
   Sensor5: 350
 };
 
-// WebSocket Server setup
+// Create a WebSocket server on port 8080
 const wss = new WebSocket.Server({ port: 8080 });
 
 wss.on('connection', ws => {
-  console.log('New client connected!');
+  console.log('New WebSocket client connected');
 });
 
-// Function to check thresholds and send alerts
+// Function to handle and broadcast sensor data
 function processSensorData(data) {
   const sensors = data.val();
-  console.log('Received sensor data:', sensors);
+  console.log('📡 Received sensor data:', sensors);
 
-  Object.keys(THRESHOLDS).forEach(sensor => {
-    if (sensors[sensor] !== undefined) {
-      if (sensors[sensor] > THRESHOLDS[sensor]) {
-        const alertMessage = `⚠️ ALERT: ${sensor} exceeded threshold! Value: ${sensors[sensor]}`;
-        console.log(alertMessage);
+  Object.entries(sensors).forEach(([sensor, value]) => {
+    const threshold = THRESHOLDS[sensor] ?? null;
+    const isAlert = threshold !== null && value > threshold;
 
-        // Send alert to all connected WebSocket clients
-        wss.clients.forEach(client => {
-          if (client.readyState === WebSocket.OPEN) {
-            client.send(alertMessage);
-          }
-        });
+    const sensorPacket = {
+      type: 'sensor_data',
+      sensor: sensor,
+      value: value,
+      alert: isAlert,
+      threshold: threshold,
+      ...(isAlert && {
+        message: ALERT: ${sensor} exceeded threshold (${threshold}) with value ${value}`
+      })
+    };
+
+    // Send to all connected WebSocket clients
+    wss.clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify(sensorPacket));
       }
-    }
+    });
   });
 }
 
-// Listen for real-time changes to sensor data
+// Listen to Firebase for real-time updates
 sensorsRef.on('value', snapshot => {
   if (snapshot.exists()) {
     processSensorData(snapshot);
